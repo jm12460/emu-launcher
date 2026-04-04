@@ -32,9 +32,10 @@ The binary will be at `target/release/emu-launcher`.
 | `↑` / `k` | Move up |
 | `↓` / `j` | Move down |
 | `Enter` | Launch selected emulator |
+| `e` | Edit the selected emulator's path |
 | `q` / `Esc` | Quit |
 
-Select **+ add emulator** at the bottom of the list to add a new entry.
+Select **+ add emulator** at the bottom of the list to add a new entry. To edit an existing emulator's path, highlight it and press `e` — the current path is pre-filled so you can modify it in place.
 
 ## Configuration
 

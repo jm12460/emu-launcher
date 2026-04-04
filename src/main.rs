@@ -129,8 +129,8 @@ fn draw(stdout: &mut io::Stdout, emulators: &[Emulator], selected: usize) -> io:
     // nav hint
     queue!(
         stdout,
-        SetForegroundColor(Color::DarkGrey),
-        Print("  up/down or j/k to move  •  enter to launch  •  q to quit\r\n\r\n"),
+        SetForegroundColor(Color::Rgb { r: 100, g: 80, b: 200 }),
+        Print("  up/down or j/k to move  •  enter to launch  •  e to edit path  •  q to quit\r\n\r\n"),
         ResetColor
     )?;
 
@@ -148,7 +148,7 @@ fn draw(stdout: &mut io::Stdout, emulators: &[Emulator], selected: usize) -> io:
         } else {
             queue!(
                 stdout,
-                SetForegroundColor(Color::White),
+                SetForegroundColor(Color::Rgb { r: 210, g: 190, b: 255 }),
                 Print(format!("      {}\r\n", emu.name)),
                 ResetColor
             )?;
@@ -159,7 +159,7 @@ fn draw(stdout: &mut io::Stdout, emulators: &[Emulator], selected: usize) -> io:
     if selected == emulators.len() {
         queue!(
             stdout,
-            SetForegroundColor(Color::Green),
+            SetForegroundColor(Color::Rgb { r: 255, g: 0, b: 127 }),
             SetAttribute(Attribute::Bold),
             Print("   >  + add emulator\r\n"),
             SetAttribute(Attribute::Reset),
@@ -168,7 +168,7 @@ fn draw(stdout: &mut io::Stdout, emulators: &[Emulator], selected: usize) -> io:
     } else {
         queue!(
             stdout,
-            SetForegroundColor(Color::DarkGrey),
+            SetForegroundColor(Color::Rgb { r: 255, g: 80, b: 160 }),
             Print("      + add emulator\r\n"),
             ResetColor
         )?;
@@ -178,8 +178,8 @@ fn draw(stdout: &mut io::Stdout, emulators: &[Emulator], selected: usize) -> io:
 }
 
 // shows a text input prompt and returns what the user typed, or None if they cancelled
-fn read_input(stdout: &mut io::Stdout, prompt: &str) -> io::Result<Option<String>> {
-    let mut buf = String::new();
+fn read_input(stdout: &mut io::Stdout, prompt: &str, initial: &str) -> io::Result<Option<String>> {
+    let mut buf = initial.to_string();
 
     loop {
         queue!(
@@ -241,7 +241,9 @@ fn main() -> io::Result<()> {
 
         draw(&mut stdout, &config.emulators, selected)?;
 
-        let choice = loop {
+        enum Action { Launch(usize), Edit(usize), Quit }
+
+        let action = loop {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Up | KeyCode::Char('k') => {
@@ -256,22 +258,51 @@ fn main() -> io::Result<()> {
                         }
                         draw(&mut stdout, &config.emulators, selected)?;
                     }
-                    KeyCode::Enter => break Some(selected),
-                    KeyCode::Char('q') | KeyCode::Esc => break None,
+                    KeyCode::Enter => break Action::Launch(selected),
+                    KeyCode::Char('e') if selected < config.emulators.len() => {
+                        break Action::Edit(selected);
+                    }
+                    KeyCode::Char('q') | KeyCode::Esc => break Action::Quit,
                     _ => {}
                 }
             }
         };
 
-        let Some(idx) = choice else {
-            break 'outer;
-        };
+        match action {
+            Action::Quit => break 'outer,
+            Action::Edit(idx) => {
+                let current_path = config.emulators[idx].path.clone();
+                queue!(
+                    stdout,
+                    Clear(ClearType::All),
+                    MoveTo(0, 0),
+                    SetForegroundColor(Color::Magenta),
+                    SetAttribute(Attribute::Bold),
+                    Print(format!("\r\n  .---------------------------------------.\r\n")),
+                    Print(format!("  |         ~ edit path ~                 |\r\n")),
+                    Print(format!("  '---------------------------------------'\r\n\r\n")),
+                    SetAttribute(Attribute::Reset),
+                    SetForegroundColor(Color::DarkGrey),
+                    Print(format!("  emulator: {}\r\n\r\n", config.emulators[idx].name)),
+                    ResetColor
+                )?;
+                stdout.flush()?;
+
+                if let Some(new_path) = read_input(&mut stdout, "path", &current_path)? {
+                    if !new_path.is_empty() {
+                        config.emulators[idx].path = new_path;
+                        save_config(&config);
+                    }
+                }
+                continue;
+            }
+            Action::Launch(idx) => {
 
         // "add emulator" was selected
         if idx == config.emulators.len() {
             draw_add_screen(&mut stdout)?;
 
-            let name = read_input(&mut stdout, "name")?;
+            let name = read_input(&mut stdout, "name", "")?;
             let Some(name) = name else { continue; };
             if name.is_empty() { continue; }
 
@@ -285,7 +316,7 @@ fn main() -> io::Result<()> {
             )?;
             stdout.flush()?;
 
-            let path = read_input(&mut stdout, "path")?;
+            let path = read_input(&mut stdout, "path", "")?;
             let Some(path) = path else { continue; };
             if path.is_empty() { continue; }
 
@@ -337,6 +368,9 @@ fn main() -> io::Result<()> {
         while event::poll(std::time::Duration::from_millis(0))? {
             let _ = event::read();
         }
+
+            } // end Action::Launch
+        } // end match action
     }
 
     execute!(stdout, Show, LeaveAlternateScreen)?;
